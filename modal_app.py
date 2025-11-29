@@ -2,31 +2,43 @@ import modal
 import os
 import sys
 
-# Define the base image and install dependencies
+# Use PyTorch official image with CUDA 12.4 + cuDNN 9 pre-installed
 image = (
-    modal.Image.debian_slim(python_version="3.11")
+    modal.Image.from_registry(
+        "nvidia/cuda:12.6.2-cudnn-devel-ubuntu22.04",
+        add_python="3.11"
+    )
     .apt_install(
+        "build-essential",
+        "python3-dev",
         "ffmpeg",
         "portaudio19-dev",
         "libsndfile1",
         "espeak-ng",
         "git",
+        "clang",
+    )
+    # Suppress ALSA errors
+    .run_commands(
+        'echo "pcm.!default { type plug slave.pcm null }" > /etc/asound.conf'
     )
     .pip_install(
         "fastapi",
         "uvicorn",
         "python-dotenv",
         "groq",
-        "realtimetts[kokoro]==0.5.5",
-        "realtimestt==0.3.104",
         "numpy",
         "scipy",
     )
+    # PyTorch is already installed in the base image with correct CUDA/cuDNN
+    # Just install TTS libraries
+    .pip_install(
+        "realtimetts[kokoro]==0.5.5",
+        "realtimestt==0.3.104",
+    )
 )
 
-# Add your local source directories / files to the image
 image = image.add_local_dir("code", remote_path="/root/code")
-# image = image.add_local_dir("static", remote_path="/root/static")
 if os.path.exists("system_prompt.txt"):
     image = image.add_local_file("system_prompt.txt", remote_path="/root/system_prompt.txt")
 
@@ -34,9 +46,9 @@ app = modal.App("realtime-voice-chat", image=image)
 
 @app.function(
     image=image,
-    secrets=[ modal.Secret.from_name("groq-api-key") ],
-    gpu="L4",  # Enable GPU for Kokoro TTS acceleration
-    scaledown_window=300,
+    secrets=[modal.Secret.from_name("groq-api-key")],
+    gpu="L4",
+    scaledown_window=60,
     timeout=600,
 )
 @modal.concurrent(max_inputs=10)
