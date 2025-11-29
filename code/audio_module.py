@@ -46,7 +46,6 @@ def ensure_lasinya_models(models_root: str = "models", model_name: str = "Lasiny
     Checks for required model files (config.json, vocab.json, etc.) within
     the specified directory structure. If any file is missing, it downloads
     it from the 'KoljaB/XTTS_Lasinya' Hugging Face Hub repository.
-
     Args:
         models_root: The root directory where models are stored.
         model_name: The specific name of the model subdirectory.
@@ -80,6 +79,7 @@ class AudioProcessor:
             self,
             engine: str = START_ENGINE,
             orpheus_model: str = "orpheus-3b-0.1-ft-Q8_0-GGUF/orpheus-3b-0.1-ft-q8_0.gguf",
+            kokoro_model: str = "hexgrad/Kokoro-82M",
         ) -> None:
         """
         Initializes the AudioProcessor with a specific TTS engine.
@@ -91,12 +91,14 @@ class AudioProcessor:
         Args:
             engine: The name of the TTS engine to use ("coqui", "kokoro", "orpheus").
             orpheus_model: The path or identifier for the Orpheus model file (used only if engine is "orpheus").
+            kokoro_model: The path or identifier for the Kokoro model file (used only if engine is "kokoro").
         """
         self.engine_name = engine
         self.stop_event = threading.Event()
         self.finished_event = threading.Event()
         self.audio_chunks = asyncio.Queue() # Queue for synthesized audio output
         self.orpheus_model = orpheus_model
+        self.kokoro_model = kokoro_model
 
         self.silence = ENGINE_SILENCES.get(engine, ENGINE_SILENCES[self.engine_name])
         self.current_stream_chunk_size = QUICK_ANSWER_STREAM_CHUNK_SIZE # Initial chunk size
@@ -120,6 +122,7 @@ class AudioProcessor:
             )
         elif engine == "kokoro":
             self.engine = KokoroEngine(
+                model=self.kokoro_model,
                 voice="af_heart",
                 default_speed=1.26,
                 trim_silence=True,

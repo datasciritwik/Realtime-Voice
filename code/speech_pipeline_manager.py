@@ -113,53 +113,23 @@ class RunningGeneration:
 class SpeechPipelineManager:
     """
     Orchestrates the text-to-speech pipeline, managing LLM and TTS workers.
-
-    This class handles incoming text requests, manages the lifecycle of a generation
-    (including LLM inference, TTS synthesis for both quick and final parts),
-    facilitates aborting ongoing generations, manages conversation history,
-    and coordinates worker threads using queues and events.
     """
     def __init__(
-            self,
-            tts_engine: str = "kokoro",
-            llm_provider: str = "ollama",
-            llm_model: str = "hf.co/bartowski/huihui-ai_Mistral-Small-24B-Instruct-2501-abliterated-GGUF:Q4_K_M",
-            no_think: bool = False,
-            orpheus_model: str = "orpheus-3b-0.1-ft-Q8_0-GGUF/orpheus-3b-0.1-ft-q8_0.gguf",
-        ):
-        """
-        Initializes the SpeechPipelineManager.
-
-        Sets up configuration, instantiates dependencies (AudioProcessor, LLM, etc.),
-        loads system prompts, initializes state variables (queues, events, flags),
-        measures initial inference latencies, and starts the background worker threads.
-
-        Args:
-            tts_engine: The TTS engine to use (e.g., "kokoro", "orpheus").
-            llm_provider: The LLM backend provider (e.g., "ollama").
-            llm_model: The specific LLM model identifier.
-            no_think: If True, removes specific thinking tags from LLM output.
-            orpheus_model: Path or identifier for the Orpheus TTS model, if used.
-        """
+        self,
+        tts_engine: str = "coqui",
+        llm_provider: str = "ollama",
+        llm_model: str = "mistral",
+        no_think: bool = False,
+        orpheus_model: str = "orpheus-3b-0.1-ft-Q8_0-GGUF/orpheus-3b-0.1-ft-q8_0.gguf",
+        kokoro_model: str = "hexgrad/Kokoro-82M",
+    ):
         self.tts_engine = tts_engine
         self.llm_provider = llm_provider
         self.llm_model = llm_model
-        self.no_think = no_think
+        self.system_prompt = "You are a helpful AI assistant. Keep your answers short and concise."
         self.orpheus_model = orpheus_model
+        self.kokoro_model = kokoro_model
 
-        self.system_prompt = system_prompt
-        if tts_engine == "orpheus":
-            self.system_prompt += f"\n{orpheus_prompt_addon}"
-
-        # --- Instance Dependencies ---
-        self.audio = AudioProcessor(
-            engine=self.tts_engine,
-            orpheus_model=self.orpheus_model
-        )
-        self.audio.on_first_audio_chunk_synthesize = self.on_first_audio_chunk_synthesize
-        self.text_similarity = TextSimilarity(focus='end', n_words=5)
-        self.text_context = TextContext()
-        self.generation_counter: int = 0
         self.abort_lock = threading.Lock()
         self.llm = LLM(
             backend=self.llm_provider, # Or your backend
@@ -167,10 +137,15 @@ class SpeechPipelineManager:
             system_prompt=self.system_prompt,
             no_think=no_think,
         )
+        
+        self.audio = AudioProcessor(
+            engine=self.tts_engine,
+            orpheus_model=self.orpheus_model,
+            kokoro_model=self.kokoro_model,
+        )
         self.llm.prewarm()
         self.llm_inference_time = self.llm.measure_inference_time()
         logger.debug(f"🗣️🧠🕒 LLM inference time: {self.llm_inference_time:.2f}ms")
-
         # --- State ---
         self.history = []
         self.requests_queue = Queue()
