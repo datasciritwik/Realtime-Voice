@@ -147,8 +147,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files with no cache
-app.mount("/static", NoCacheStaticFiles(directory="static"), name="static")
+# Determine the correct static directory path
+# Check both local (../static or static) and Modal deployment (current dir has static)
+STATIC_DIR = None
+if os.path.exists("static"):
+    STATIC_DIR = "static"
+elif os.path.exists(os.path.join(os.path.dirname(__file__), "static")):
+    STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+# Mount static files with no cache (only if directory exists)
+if STATIC_DIR:
+    app.mount("/static", NoCacheStaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/favicon.ico")
 async def favicon():
@@ -158,7 +167,9 @@ async def favicon():
     Returns:
         A FileResponse containing the favicon.
     """
-    return FileResponse("static/favicon.ico")
+    if STATIC_DIR and os.path.exists(os.path.join(STATIC_DIR, "favicon.ico")):
+        return FileResponse(os.path.join(STATIC_DIR, "favicon.ico"))
+    return Response(status_code=404)
 
 @app.get("/")
 async def get_index() -> HTMLResponse:
@@ -170,9 +181,11 @@ async def get_index() -> HTMLResponse:
     Returns:
         An HTMLResponse containing the content of index.html.
     """
-    with open("static/index.html", "r", encoding="utf-8") as f:
-        html_content = f.read()
-    return HTMLResponse(content=html_content)
+    if STATIC_DIR and os.path.exists(os.path.join(STATIC_DIR, "index.html")):
+        with open(os.path.join(STATIC_DIR, "index.html"), "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return HTMLResponse(content=html_content)
+    return HTMLResponse(content="<html><body><h1>RealtimeVoiceChat API</h1><p>WebSocket endpoint: /ws</p></body></html>")
 
 # --------------------------------------------------------------------
 # Utility functions
